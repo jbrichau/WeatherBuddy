@@ -1,0 +1,16 @@
+{
+    "extensions.ignoreRecommendations": true,
+    "C_Cpp.default.configurationProvider": "particle.particle-vscode-core",
+    "cortex-debug.openocdPath": "${command:particle.getDebuggerOpenocdPath}",
+    "files.associations": {
+        "*.rplxml": "xml",
+        "*.ino": "cpp",
+        "algorithm": "cpp",
+        "memory": "cpp",
+        "random": "cpp",
+        "future": "cpp"
+    },
+    "particle.firmwareVersion": "1.5.2",
+    "particle.targetPlatform": "argon",
+    "particle.targetDevice": "WeatherMeter"
+}

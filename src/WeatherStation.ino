@@ -60,8 +60,6 @@ ApplicationWatchdog wd(60000, System.reset);
 //---------------------------------------------------------------
 void setup()
 {
-  selectExternalMeshAntenna();
-
   pinMode(WSPEED, INPUT_PULLUP); // input from wind meters windspeed sensor
   pinMode(RAIN, INPUT_PULLUP);   // input from wind meters rain gauge sensor
 
@@ -89,6 +87,9 @@ void setup()
   Particle.variable("barotemp", baroTemp);
   Particle.variable("pressure", pascals);
 
+  Particle.function("resetsensors", resetWeatherSensor);
+  Particle.function("reset", resetme);
+
   seconds = 0;
   for (int i = 0; i < 10; i++)
   {
@@ -96,6 +97,30 @@ void setup()
     windgustdirection_10m[i] = 0;
   }
   lastSecond = millis();
+  Time.zone(2);
+}
+
+String weatherDataJson() {
+  DynamicJsonDocument doc(1024);
+  char output[1024];
+
+  doc["winddir"] = winddir;
+  doc["windkmh"] = windspeedkmh;
+  doc["windgustkmh"] = windgustkmh;
+  doc["windgustdir"] = windgustdir;
+  doc["winddir2mavg"] = winddir_avg2m;
+  doc["windkmh2mavg"] = windspdkmh_avg2m;
+  doc["windgustkmh10m"] = windgustkmh_10m;
+  doc["windgustdir10m"] = windgustdir_10m;
+  doc["60mrainmm"] = rainmm;
+  doc["dailyrainmm"] = dailyrainmm;
+  doc["tempc"] = tempc;
+  doc["barotempc"] = baroTemp;
+  doc["humidity"] = humidity;
+  doc["pressure"] = pascals /100;
+  
+  serializeJson(doc,output);
+  return output;
 }
 //---------------------------------------------------------------
 void loop()
@@ -288,43 +313,6 @@ void wspeedIRQ()
   }
 }
 
-// https://community.particle.io/t/xenon-external-antenna-functional/48233/3
-void selectExternalMeshAntenna() {
-#if (PLATFORM_ID == PLATFORM_ARGON)
-	digitalWrite(ANTSW1, 1);
-	digitalWrite(ANTSW2, 0);
-#elif (PLATFORM_ID == PLATFORM_BORON)
-	digitalWrite(ANTSW1, 0);
-#else
-	digitalWrite(ANTSW1, 0);
-	digitalWrite(ANTSW2, 1);
-#endif
-}
-
-
-String weatherDataJson() {
-  DynamicJsonDocument doc(1024);
-  char output[1024];
-
-  doc["winddir"] = winddir;
-  doc["windkmh"] = windspeedkmh;
-  doc["windgustkmh"] = windgustkmh;
-  doc["windgustdir"] = windgustdir;
-  doc["winddir2mavg"] = winddir_avg2m;
-  doc["windkmh2mavg"] = windspdkmh_avg2m;
-  doc["windgustkmh10m"] = windgustkmh_10m;
-  doc["windgustdir10m"] = windgustdir_10m;
-  doc["60mrainmm"] = rainmm;
-  doc["dailyrainmm"] = dailyrainmm;
-  doc["tempc"] = tempc;
-  doc["barotempc"] = baroTemp;
-  doc["humidity"] = humidity;
-  doc["pressure"] = pascals /100;
-  
-  serializeJson(doc,output);
-  return output;
-}
-
 void printInfo()
 {
   //This function prints the weather data out to the default Serial Port
@@ -398,4 +386,15 @@ void printInfo()
   //Serial.print("Altitude:");
   //Serial.print(altf);
   //Serial.println("ft.");
+}
+
+
+int resetWeatherSensor(String args) {
+  sensor.reset();
+  return 0;
+}
+
+int resetme(String args) {
+  System.reset();
+  return 0;
 }

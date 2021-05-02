@@ -1,10 +1,13 @@
-#include "SparkFun_Photon_Weather_Shield_Library/SparkFun_Photon_Weather_Shield_Library.h"
 #define ARDUINOJSON_ENABLE_PROGMEM 0
 #include <ArduinoJson.h>
+#include "Adafruit_MPL3115A2.h"
+#include <PietteTech_DHT.h>
 
-int WDIR = A0;
-int RAIN = D2;
-int WSPEED = D3;
+#define DHTTYPE  DHT22
+#define DHTPIN   D4
+#define WDIR     A0
+#define RAIN     D2
+#define WSPEED   D3
 
 //Global Variablesd
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -51,8 +54,8 @@ volatile long lastWindIRQ = 0;
 volatile byte windClicks = 0;
 volatile unsigned long raintime, rainlast, raininterval, rain;
 
-//Create Instance of HTU21D or SI7021 temp and humidity sensor and MPL3115A2 barometric sensor
-Weather sensor;
+Adafruit_MPL3115A2 baro = Adafruit_MPL3115A2();
+PietteTech_DHT DHT(DHTPIN, DHTTYPE);
 
 SYSTEM_THREAD(ENABLED);
 ApplicationWatchdog wd(60000, System.reset);
@@ -63,15 +66,12 @@ void setup()
   pinMode(WSPEED, INPUT_PULLUP); // input from wind meters windspeed sensor
   pinMode(RAIN, INPUT_PULLUP);   // input from wind meters rain gauge sensor
 
-  sensor.begin();
-  sensor.setModeBarometer();
-  sensor.setOversampleRate(7);
-  //Call with a rate from 0 to 7. See page 33 for table of ratios.
-  //Sets the over sample rate. Datasheet calls for 128 but you can set it
-  //from 1 to 128 samples. The higher the oversample rate the greater
-  //the time between data samples.
+  while(! baro.begin()) {
+    Serial.println("Could not start sensor");
+    delay(1000);
+  }
 
-  sensor.enableEventFlags(); //Necessary register calls to enble temp, baro and alt
+  DHT.begin();
 
   attachInterrupt(RAIN, rainIRQ, FALLING);
   attachInterrupt(WSPEED, wspeedIRQ, FALLING);
@@ -87,7 +87,6 @@ void setup()
   Particle.variable("barotemp", baroTemp);
   Particle.variable("pressure", pascals);
 
-  Particle.function("resetsensors", resetWeatherSensor);
   Particle.function("reset", resetme);
 
   seconds = 0;
@@ -212,20 +211,46 @@ double get_wind_speed()
 
 void getWeather()
 {
-  // Measure Relative Humidity from the HTU21D or Si7021
-  humidity = sensor.getRH();
-
-  // Measure Temperature from the HTU21D or Si7021
-  tempc = sensor.getTemp();
-  // Temperature is measured every time RH is requested.
-  // It is faster, therefore, to read it from previous RH
-  // measurement with getTemp() instead with readTemp()
+  int result = DHT.acquireAndWait(2000);
+  switch (result) {
+    case DHTLIB_OK:
+      humidity = DHT.getHumidity();
+      tempc = DHT.getCelsius();
+      // dewpoint = DHT.getDewPointSlow();
+      Serial.print("Humidity: ");Serial.println(humidity);
+      Serial.print("Temperature: ");Serial.println(tempc);
+      // Serial.print("Dewpoint: ");Serial.println(dewpoint);
+      break;
+    case DHTLIB_ERROR_CHECKSUM:
+      Serial.println("Error\n\r\tChecksum error");
+      break;
+    case DHTLIB_ERROR_ISR_TIMEOUT:
+      Serial.println("Error\n\r\tISR time out error");
+      break;
+    case DHTLIB_ERROR_RESPONSE_TIMEOUT:
+      Serial.println("Error\n\r\tResponse time out error");
+      break;
+    case DHTLIB_ERROR_DATA_TIMEOUT:
+      Serial.println("Error\n\r\tData time out error");
+      break;
+    case DHTLIB_ERROR_ACQUIRING:
+      Serial.println("Error\n\r\tAcquiring");
+      break;
+    case DHTLIB_ERROR_DELTA:
+      Serial.println("Error\n\r\tDelta time too small");
+      break;
+    case DHTLIB_ERROR_NOTSTARTED:
+      Serial.println("Error\n\r\tNot started");
+      break;
+    default:
+      Serial.println("Unknown error");
+  }
 
   //Measure the Barometer temperature in C from the MPL3115A2
-  baroTemp = sensor.readBaroTemp();
+  baroTemp = baro.getTemperature();
 
   //Measure Pressure from the MPL3115A2
-  pascals = sensor.readPressure();
+  pascals = baro.getPressure();
 
   //Calc winddir
   winddir = get_wind_direction();
@@ -386,12 +411,6 @@ void printInfo()
   //Serial.print("Altitude:");
   //Serial.print(altf);
   //Serial.println("ft.");
-}
-
-
-int resetWeatherSensor(String args) {
-  sensor.reset();
-  return 0;
 }
 
 int resetme(String args) {

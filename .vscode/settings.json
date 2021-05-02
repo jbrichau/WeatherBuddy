@@ -10,7 +10,7 @@
         "random": "cpp",
         "future": "cpp"
     },
-    "particle.firmwareVersion": "1.5.2",
+    "particle.firmwareVersion": "3.0.0",
     "particle.targetPlatform": "argon",
     "particle.targetDevice": "WeatherMeter"
 }

@@ -1,0 +1,7 @@
+{
+    "name": "weatherdata-store",
+    "version": "0.1.0",
+    "dependencies": {
+      "@google-cloud/datastore": "^1.4.0"
+    }
+  }

@@ -3,13 +3,14 @@
 #include "Adafruit_MPL3115A2.h"
 #include <PietteTech_DHT.h>
 
-#define DHTTYPE  DHT22
-#define DHTPIN   D4
-#define WDIR     A0
-#define RAIN     D2
-#define WSPEED   D3
+#define DHTTYPE             DHT22
+#define DHTPIN              D4
+#define WDIR                A0
+#define RAIN                D2
+#define WSPEED              D3
+#define GPSRTK_PWR_SWITCH   A3
 
-//Global Variablesd
+//Global Variables
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 long lastSecond;  //The millis counter to see when a second rolls by
 byte seconds;     //When it hits 60, increase the current minute
@@ -60,11 +61,18 @@ PietteTech_DHT DHT(DHTPIN, DHTTYPE);
 SYSTEM_THREAD(ENABLED);
 ApplicationWatchdog wd(60000, System.reset);
 
+String error="None";
+
+boolean gpsrtk_power_on = false;
+
 //---------------------------------------------------------------
 void setup()
 {
   pinMode(WSPEED, INPUT_PULLUP); // input from wind meters windspeed sensor
   pinMode(RAIN, INPUT_PULLUP);   // input from wind meters rain gauge sensor
+
+  pinMode(GPSRTK_PWR_SWITCH, OUTPUT);
+  digitalWrite(GPSRTK_PWR_SWITCH,0);
 
   while(! baro.begin()) {
     Serial.println("Could not start sensor");
@@ -86,6 +94,8 @@ void setup()
   Particle.variable("humidity", humidity);
   Particle.variable("barotemp", baroTemp);
   Particle.variable("pressure", pascals);
+  Particle.variable("error",error);
+  Particle.variable("gpsrtk-power",gpsrtk_power_on);
 
   Particle.function("reset", resetme);
 
@@ -117,6 +127,7 @@ String weatherDataJson() {
   doc["barotempc"] = baroTemp;
   doc["humidity"] = humidity;
   doc["pressure"] = pascals /100;
+  // doc["error"] = error;
   
   serializeJson(doc,output);
   return output;
@@ -143,10 +154,15 @@ void loop()
 
       rainHour[minutes] = 0;         //Zero out this minute's rainfall amount
       windgust_10m[minutes_10m] = 0; //Zero out this minute's gust
+
+      //Get readings of temperature and humidity only every minute
+      getTemperatureAndHumidity();
     }
 
-    //Get readings from all sensors
-    getWeather();
+    //Get readings from all sensors every second
+    getWindAndRain();
+
+    gpsrtk_power_check();
 
     if (seconds == 0)
       Particle.publish("weatherdata", weatherDataJson(), PRIVATE);
@@ -209,43 +225,8 @@ double get_wind_speed()
   return (windSpeed);
 }
 
-void getWeather()
+void getWindAndRain()
 {
-  int result = DHT.acquireAndWait(2000);
-  switch (result) {
-    case DHTLIB_OK:
-      humidity = DHT.getHumidity();
-      tempc = DHT.getCelsius();
-      // dewpoint = DHT.getDewPointSlow();
-      Serial.print("Humidity: ");Serial.println(humidity);
-      Serial.print("Temperature: ");Serial.println(tempc);
-      // Serial.print("Dewpoint: ");Serial.println(dewpoint);
-      break;
-    case DHTLIB_ERROR_CHECKSUM:
-      Serial.println("Error\n\r\tChecksum error");
-      break;
-    case DHTLIB_ERROR_ISR_TIMEOUT:
-      Serial.println("Error\n\r\tISR time out error");
-      break;
-    case DHTLIB_ERROR_RESPONSE_TIMEOUT:
-      Serial.println("Error\n\r\tResponse time out error");
-      break;
-    case DHTLIB_ERROR_DATA_TIMEOUT:
-      Serial.println("Error\n\r\tData time out error");
-      break;
-    case DHTLIB_ERROR_ACQUIRING:
-      Serial.println("Error\n\r\tAcquiring");
-      break;
-    case DHTLIB_ERROR_DELTA:
-      Serial.println("Error\n\r\tDelta time too small");
-      break;
-    case DHTLIB_ERROR_NOTSTARTED:
-      Serial.println("Error\n\r\tNot started");
-      break;
-    default:
-      Serial.println("Unknown error");
-  }
-
   //Measure the Barometer temperature in C from the MPL3115A2
   baroTemp = baro.getTemperature();
 
@@ -308,6 +289,41 @@ void getWeather()
   rainmm = 0;
   for (int i = 0; i < 60; i++)
     rainmm += rainHour[i];
+}
+
+void getTemperatureAndHumidity(){
+  int result = DHT.acquireAndWait(3000);
+  switch (result) {
+    case DHTLIB_OK:
+      humidity = DHT.getHumidity();
+      tempc = DHT.getCelsius();
+      error = "None";
+      // dewpoint = DHT.getDewPointSlow();
+      break;
+    case DHTLIB_ERROR_CHECKSUM:
+      error = "Error\n\r\tChecksum error";
+      break;
+    case DHTLIB_ERROR_ISR_TIMEOUT:
+      error = "Error\n\r\tISR time out error";
+      break;
+    case DHTLIB_ERROR_RESPONSE_TIMEOUT:
+      error = "Error\n\r\tResponse time out error";
+      break;
+    case DHTLIB_ERROR_DATA_TIMEOUT:
+      error = "Error\n\r\tData time out error";
+      break;
+    case DHTLIB_ERROR_ACQUIRING:
+      error = "Error\n\r\tAcquiring";
+      break;
+    case DHTLIB_ERROR_DELTA:
+      error = "Error\n\r\tDelta time too small";
+      break;
+    case DHTLIB_ERROR_NOTSTARTED:
+      error = "Error\n\r\tNot started";
+      break;
+    default:
+      error = "Unknown error";
+  }
 }
 
 //Interrupt routines (these are called by the hardware interrupts, not by the main code)
@@ -416,4 +432,19 @@ void printInfo()
 int resetme(String args) {
   System.reset();
   return 0;
+}
+
+void gpsrtk_power_check() {
+  int hour = Time.hour();
+  if(hour > 10 && hour < 22) {
+    if(!gpsrtk_power_on) {
+      digitalWrite(GPSRTK_PWR_SWITCH,1);
+      gpsrtk_power_on = true;
+    }
+  } else {
+    if(gpsrtk_power_on) {
+      digitalWrite(GPSRTK_PWR_SWITCH,0);
+      gpsrtk_power_on = false;
+    }
+  }
 }
